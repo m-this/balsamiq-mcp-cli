@@ -8,7 +8,7 @@ responses come back as pruned YAML instead of raw JSON.
 ## Install
 
 ```sh
-go install github.com/mathisfaivre/bais@latest
+go install github.com/m-this/balsamiq-mcp-cli@latest
 ```
 
 ## Usage

@@ -1,4 +1,4 @@
-module github.com/mathisfaivre/bais
+module github.com/m-this/balsamiq-mcp-cli
 
 go 1.26.4
 
