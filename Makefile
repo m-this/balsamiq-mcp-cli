@@ -1,14 +1,18 @@
-BIN := bmc$(if $(filter windows,$(shell go env GOOS)),.exe)
-GOBIN := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)
+GO := $(shell command -v go 2>/dev/null)
+BIN = bmc$(if $(filter windows,$(shell go env GOOS)),.exe)
+GOBIN = $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)
 
-.PHONY: build install test
+.PHONY: build install test check-go
 
-build:
+check-go:
+	@test -n "$(GO)" || { echo "error: Go toolchain not found in PATH; install it from https://go.dev/dl/"; exit 1; }
+
+build: check-go
 	go build -o $(BIN) .
 
-install:
+install: check-go
 	go build -o "$(GOBIN)/$(BIN)" .
 
-test:
+test: check-go
 	go vet ./...
 	go test ./...
