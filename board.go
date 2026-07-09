@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -131,23 +133,49 @@ func cmdTOC(args []string) error {
 	return nil
 }
 
-// cmdBoard prints the compact control map: id, type, geometry, text.
+// cmdBoard prints the compact control map: one line per control with id,
+// type, and text. Geometry is opt-in (--geo) or implied by a filter, since
+// filtered lines are usually about to be patched.
 func cmdBoard(args []string) error {
-	var boardURL string
-	refresh := false
-	full := false
-	for _, a := range args {
-		switch a {
+	var boardURL, find, typ string
+	refresh, full, geo := false, false, false
+	depth := -1
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--refresh":
 			refresh = true
 		case "--full":
 			full = true
+		case "--geo":
+			geo = true
+		case "--depth":
+			i++
+			if i >= len(args) {
+				return errors.New("--depth needs a number")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return fmt.Errorf("--depth: %w", err)
+			}
+			depth = n
+		case "--find":
+			i++
+			if i >= len(args) {
+				return errors.New("--find needs a pattern")
+			}
+			find = strings.ToLower(args[i])
+		case "--type":
+			i++
+			if i >= len(args) {
+				return errors.New("--type needs a control type")
+			}
+			typ = normalizeType(args[i])
 		default:
-			boardURL = a
+			boardURL = args[i]
 		}
 	}
 	if boardURL == "" {
-		return errors.New("usage: bais board <boardUrl> [--refresh] [--full]")
+		return errors.New("usage: bais board <boardUrl> [--refresh] [--full] [--geo] [--depth n] [--find text] [--type button]")
 	}
 	b, err := loadBoard(boardURL, refresh)
 	if err != nil {
@@ -156,12 +184,41 @@ func cmdBoard(args []string) error {
 	if full {
 		return printYAML(map[string]any{"name": b.Name, "content": anySlice(b.Controls)})
 	}
+	opts := mapOpts{geo: geo || find != "" || typ != "", depth: depth, find: find, typ: typ}
 	fmt.Printf("board: %s\n", b.Name)
-	fmt.Println("id type x,y wxh text (indent = nesting)")
 	for _, ctrl := range b.Controls {
-		printControlLine(ctrl, 0)
+		printControlLine(ctrl, 0, opts)
 	}
 	return nil
+}
+
+type mapOpts struct {
+	geo   bool
+	depth int
+	find  string
+	typ   string
+}
+
+func (o mapOpts) filtered() bool { return o.find != "" || o.typ != "" }
+
+func (o mapOpts) matches(ctrl map[string]any) bool {
+	if !o.filtered() {
+		return true
+	}
+	id, _ := ctrl["id"].(string)
+	typ, _ := ctrl["type"].(string)
+	text, _ := ctrl["text"].(string)
+	if o.typ != "" && !strings.Contains(normalizeType(typ), o.typ) {
+		return false
+	}
+	if o.find != "" && !strings.Contains(strings.ToLower(text), o.find) && id != o.find {
+		return false
+	}
+	return true
+}
+
+func normalizeType(t string) string {
+	return strings.ToLower(strings.NewReplacer(" ", "", "-", "", "_", "").Replace(t))
 }
 
 func anySlice(in []map[string]any) []any {
@@ -172,28 +229,38 @@ func anySlice(in []map[string]any) []any {
 	return out
 }
 
-func printControlLine(ctrl map[string]any, depth int) {
-	id, _ := ctrl["id"].(string)
-	if id == "" {
-		id = "-"
+func printControlLine(ctrl map[string]any, depth int, opts mapOpts) {
+	if opts.depth >= 0 && depth > opts.depth {
+		return
 	}
-	typ, _ := ctrl["type"].(string)
-	geo := ""
-	if bbox, ok := ctrl["bbox"].(map[string]any); ok {
-		geo = fmt.Sprintf("%v,%v %vx%v", bbox["left"], bbox["top"], bbox["w"], bbox["h"])
-	}
-	line := fmt.Sprintf("%s%s %s %s", strings.Repeat("  ", depth), id, typ, geo)
-	if text, ok := ctrl["text"].(string); ok && text != "" {
-		if len(text) > 60 {
-			text = text[:57] + "..."
+	if opts.matches(ctrl) {
+		id, _ := ctrl["id"].(string)
+		if id == "" {
+			id = "-"
 		}
-		line += " " + fmt.Sprintf("%q", text)
+		typ, _ := ctrl["type"].(string)
+		indent := strings.Repeat("  ", depth)
+		if opts.filtered() {
+			indent = ""
+		}
+		line := indent + id + " " + typ
+		if opts.geo {
+			if bbox, ok := ctrl["bbox"].(map[string]any); ok {
+				line += fmt.Sprintf(" %v,%v %vx%v", bbox["left"], bbox["top"], bbox["w"], bbox["h"])
+			}
+		}
+		if text, ok := ctrl["text"].(string); ok && text != "" {
+			if len(text) > 60 {
+				text = text[:57] + "..."
+			}
+			line += " " + fmt.Sprintf("%q", text)
+		}
+		fmt.Println(line)
 	}
-	fmt.Println(line)
 	if children, ok := ctrl["children"].([]any); ok {
 		for _, child := range children {
 			if m, ok := child.(map[string]any); ok {
-				printControlLine(m, depth+1)
+				printControlLine(m, depth+1, opts)
 			}
 		}
 	}
@@ -254,23 +321,30 @@ func findControl(controls []map[string]any, id string) map[string]any {
 // cmdEdit applies a YAML patch file (additions/patches/deletions) atomically.
 func cmdEdit(args []string) error {
 	var boardURL, file string
+	preview := false
 	for i := 0; i < len(args); i++ {
-		if args[i] == "-f" && i+1 < len(args) {
+		switch {
+		case args[i] == "-f" && i+1 < len(args):
 			i++
 			file = args[i]
-		} else {
+		case args[i] == "--preview":
+			preview = true
+		default:
 			boardURL = args[i]
 		}
 	}
 	if boardURL == "" || file == "" {
-		return errors.New("usage: bais edit <boardUrl> -f patch.yaml (keys: additions, patches, deletions)")
+		return errors.New("usage: bais edit <boardUrl> -f patch.yaml [--preview] (keys: additions, patches, deletions)")
 	}
 	params := map[string]any{}
 	if err := mergeFile(params, file); err != nil {
 		return err
 	}
 	params["boardUrl"] = boardURL
-	if err := syncAndCheckIDs(boardURL, params); err != nil {
+	if err := lintErrors(lintEdit(params)); err != nil {
+		return err
+	}
+	if err := prepareEdit(boardURL, params); err != nil {
 		return err
 	}
 	result, err := callTool("edit_balsamiq_board", params)
@@ -281,40 +355,96 @@ func cmdEdit(args []string) error {
 		}
 		return err
 	}
-	return printYAML(result)
+	if err := printYAML(result); err != nil {
+		return err
+	}
+	if preview {
+		return writePreview(boardURL, "", "")
+	}
+	return nil
 }
 
-// syncAndCheckIDs re-fetches the board right before an edit, so the cache
-// reflects any manual changes made in the editor meanwhile, and rejects the
-// edit early if a targeted control no longer exists.
-func syncAndCheckIDs(boardURL string, params map[string]any) error {
-	targeted := make([]string, 0, 8)
-	if patches, ok := params["patches"].([]any); ok {
-		for _, p := range patches {
-			if m, ok := p.(map[string]any); ok {
-				if id, ok := m["id"].(string); ok {
-					targeted = append(targeted, id)
-				}
-			}
-		}
-	}
-	if deletions, ok := params["deletions"].([]any); ok {
-		for _, d := range deletions {
-			if id, ok := d.(string); ok {
-				targeted = append(targeted, id)
-			}
-		}
-	}
+// prepareEdit re-fetches the board right before an edit, so the cache reflects
+// any manual changes made in the editor meanwhile, then:
+//   - rejects the edit early if a targeted control no longer exists
+//   - resolves relative additions (after: siblingId [+dx/dy]) to absolute x/y
+//   - expands each deletion to the control's whole subtree, since the server
+//     otherwise leaves spatially-nested children behind as ghosts
+func prepareEdit(boardURL string, params map[string]any) error {
 	b, err := fetchBoard(boardURL)
 	if err != nil {
 		return fmt.Errorf("pre-edit sync: %w", err)
 	}
 	var missing []string
-	for _, id := range targeted {
-		if findControl(b.Controls, id) == nil {
-			missing = append(missing, id)
+
+	if patches, ok := params["patches"].([]any); ok {
+		for _, p := range patches {
+			if m, ok := p.(map[string]any); ok {
+				if id, ok := m["id"].(string); ok && findControl(b.Controls, id) == nil {
+					missing = append(missing, id)
+				}
+			}
 		}
 	}
+
+	if additions, ok := params["additions"].([]any); ok {
+		for i, a := range additions {
+			ctrl, ok := a.(map[string]any)
+			if !ok {
+				continue
+			}
+			after, ok := ctrl["after"].(string)
+			if !ok {
+				continue
+			}
+			sibling := findControl(b.Controls, after)
+			if sibling == nil {
+				missing = append(missing, after)
+				continue
+			}
+			bbox, _ := sibling["bbox"].(map[string]any)
+			dx, dy := num(ctrl["dx"]), 8.0
+			if v, ok := ctrl["dy"]; ok {
+				dy = num(v)
+			}
+			ctrl["x"] = num(bbox["left"]) + dx
+			ctrl["y"] = num(bbox["top"]) + num(bbox["h"]) + dy
+			delete(ctrl, "after")
+			delete(ctrl, "dx")
+			delete(ctrl, "dy")
+			if _, ok := ctrl["zOrder"]; !ok {
+				ctrl["zOrder"] = 100 + i
+			}
+		}
+	}
+
+	if deletions, ok := params["deletions"].([]any); ok {
+		seen := map[string]bool{}
+		expanded := make([]any, 0, len(deletions))
+		add := func(id string) {
+			if !seen[id] {
+				seen[id] = true
+				expanded = append(expanded, id)
+			}
+		}
+		for _, d := range deletions {
+			id, ok := d.(string)
+			if !ok {
+				continue
+			}
+			ctrl := findControl(b.Controls, id)
+			if ctrl == nil {
+				missing = append(missing, id)
+				continue
+			}
+			add(id)
+			for _, desc := range descendantIDs(ctrl) {
+				add(desc)
+			}
+		}
+		params["deletions"] = expanded
+	}
+
 	if len(missing) > 0 {
 		return fmt.Errorf("board changed since you built this patch: controls %s no longer exist; run 'bais board %s' and rebuild the patch",
 			strings.Join(missing, ", "), boardURL)
@@ -322,25 +452,58 @@ func syncAndCheckIDs(boardURL string, params map[string]any) error {
 	return nil
 }
 
+func num(v any) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case int:
+		return float64(t)
+	default:
+		return 0
+	}
+}
+
+func descendantIDs(ctrl map[string]any) []string {
+	var ids []string
+	if children, ok := ctrl["children"].([]any); ok {
+		for _, child := range children {
+			if m, ok := child.(map[string]any); ok {
+				if id, ok := m["id"].(string); ok {
+					ids = append(ids, id)
+				}
+				ids = append(ids, descendantIDs(m)...)
+			}
+		}
+	}
+	return ids
+}
+
 // cmdCreate creates a board from a YAML description (flexbox node tree).
 func cmdCreate(args []string) error {
 	var projectURL, file string
+	preview := false
 	for i := 0; i < len(args); i++ {
-		if args[i] == "-f" && i+1 < len(args) {
+		switch {
+		case args[i] == "-f" && i+1 < len(args):
 			i++
 			file = args[i]
-		} else {
+		case args[i] == "--preview":
+			preview = true
+		default:
 			projectURL = args[i]
 		}
 	}
 	if projectURL == "" || file == "" {
-		return errors.New("usage: bais create <projectUrl> -f board.yaml (keys: board, insertAfterBoardUrl)")
+		return errors.New("usage: bais create <projectUrl> -f board.yaml [--preview] (keys: board, insertAfterBoardUrl)")
 	}
 	params := map[string]any{}
 	if err := mergeFile(params, file); err != nil {
 		return err
 	}
 	params["projectUrl"] = projectURL
+	if err := lintErrors(lintCreate(params)); err != nil {
+		return err
+	}
 	result, err := callTool("create_balsamiq_board", params)
 	if err != nil {
 		if result != nil {
@@ -348,23 +511,54 @@ func cmdCreate(args []string) error {
 		}
 		return err
 	}
-	return printYAML(result)
+	if err := printYAML(result); err != nil {
+		return err
+	}
+	if preview {
+		if url := boardURLFromResult(result); url != "" {
+			return writePreview(url, "", "")
+		}
+	}
+	return nil
 }
 
-// cmdPreview renders the board and writes the PNG to disk, printing only the path.
+func boardURLFromResult(result any) string {
+	m, ok := result.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"boardUrl", "url"} {
+		if url, ok := m[key].(string); ok {
+			return url
+		}
+	}
+	return ""
+}
+
+// cmdPreview renders the board and writes the PNG to disk, printing only the
+// path. --node crops the image to one control's bounding box so a small
+// retouch can be verified without re-reading a whole multi-screen render.
 func cmdPreview(args []string) error {
-	var boardURL, out string
+	var boardURL, out, node string
 	for i := 0; i < len(args); i++ {
-		if args[i] == "-o" && i+1 < len(args) {
+		switch {
+		case args[i] == "-o" && i+1 < len(args):
 			i++
 			out = args[i]
-		} else {
+		case args[i] == "--node" && i+1 < len(args):
+			i++
+			node = args[i]
+		default:
 			boardURL = args[i]
 		}
 	}
 	if boardURL == "" {
-		return errors.New("usage: bais preview <boardUrl> [-o out.png]")
+		return errors.New("usage: bais preview <boardUrl> [--node <controlId>] [-o out.png]")
 	}
+	return writePreview(boardURL, node, out)
+}
+
+func writePreview(boardURL, node, out string) error {
 	c, err := dial()
 	if err != nil {
 		return err
@@ -377,9 +571,8 @@ func cmdPreview(args []string) error {
 	}
 	var res struct {
 		Content []struct {
-			Type     string `json:"type"`
-			Data     string `json:"data"`
-			MimeType string `json:"mimeType"`
+			Type string `json:"type"`
+			Data string `json:"data"`
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
@@ -393,8 +586,16 @@ func cmdPreview(args []string) error {
 		if err != nil {
 			return err
 		}
+		ext := ".png"
+		if node != "" {
+			if img, err = cropToNode(boardURL, node, img); err != nil {
+				return err
+			}
+		} else if bytes.HasPrefix(img, []byte("RIFF")) {
+			ext = ".webp"
+		}
 		if out == "" {
-			out = boardCachePath(boardURL) + ".png"
+			out = boardCachePath(boardURL) + suffixFor(node) + ext
 		}
 		if err := os.WriteFile(out, img, 0o644); err != nil {
 			return err
@@ -403,6 +604,13 @@ func cmdPreview(args []string) error {
 		return nil
 	}
 	return errors.New("no image in preview response")
+}
+
+func suffixFor(node string) string {
+	if node == "" {
+		return ""
+	}
+	return "_" + node
 }
 
 func callTool(name string, params map[string]any) (any, error) {

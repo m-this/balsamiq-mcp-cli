@@ -11,19 +11,28 @@ Usage:
   bais login | logout                       OAuth against balsamiq.cloud
   bais projects                             list projects (name, space, url)
   bais toc <projectUrl>                     boards of a project, one line each
-  bais board <boardUrl> [--refresh|--full]  compact control map (id type x,y wxh text)
+  bais board <boardUrl>                     compact control map (id type "text")
+       [--geo] [--depth n] [--find text] [--type button] [--refresh] [--full]
   bais show <boardUrl> <controlId>          full props of one control (from local cache)
   bais edit <boardUrl> -f patch.yaml        atomic edit: additions / patches / deletions
-  bais create <projectUrl> -f board.yaml    new board from a flexbox node tree
-  bais preview <boardUrl> [-o out.png]      render board to a PNG, prints the path
+       [--preview]                          (lint offline, pre-edit sync, recursive delete)
+  bais create <projectUrl> -f board.yaml    new board from a flexbox node tree [--preview]
+  bais preview <boardUrl> [--node <id>]     render board (or one control) to a PNG
+       [-o out.png]
+  bais expand -f payload.yaml               dry-run: expanded + linted payload, no send
   bais tools [name]                         list tools / show one input schema
   bais call <tool> [k=v] [k:=json] [-f f]   raw tool call (--raw, --path a.b[0].c)
 
 Board content is cached in ~/Library/Caches/bais; board --refresh refetches,
-edit invalidates automatically.
+edit re-syncs and invalidates automatically.
+
+Theme: nearest .bais.yaml above the cwd (or $BAIS_THEME) defines color tokens
+($primary -> #009e0f) and parametrized partials, invoked in payloads with
+{use: pill, with: {text: AJOUTÉE}}. See bais expand to check the result.
 
 Env:
-  BAIS_URL   MCP endpoint (default https://bais.balsamiq.com/mcp)
+  BAIS_URL     MCP endpoint (default https://bais.balsamiq.com/mcp)
+  BAIS_THEME   theme file path (overrides .bais.yaml discovery)
 `
 
 func main() {
@@ -51,6 +60,8 @@ func main() {
 		err = cmdCreate(os.Args[2:])
 	case "preview":
 		err = cmdPreview(os.Args[2:])
+	case "expand":
+		err = cmdExpand(os.Args[2:])
 	case "tools":
 		err = cmdTools(os.Args[2:])
 	case "call":

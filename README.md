@@ -17,11 +17,13 @@ go install github.com/mathisfaivre/bais@latest
 bais login                                # OAuth (dynamic client registration + PKCE)
 bais projects                             # projects (name, space, url)
 bais toc <projectUrl>                     # boards of a project, one line each
-bais board <boardUrl> [--refresh|--full]  # compact control map: id type x,y wxh "text"
+bais board <boardUrl>                     # compact control map: id type "text"
+     [--geo] [--depth n] [--find text] [--type button] [--refresh] [--full]
 bais show <boardUrl> <id>                 # full props of one control, from local cache
 bais edit <boardUrl> -f patch.yaml        # atomic edit: additions / patches / deletions
 bais create <projectUrl> -f board.yaml    # new board from a flexbox node tree
-bais preview <boardUrl> [-o out.png]      # render board to PNG, prints the path
+bais preview <boardUrl> [--node <id>]     # render board (or crop one control) to an image
+bais expand -f payload.yaml               # dry-run: expanded + linted payload, no send
 bais tools [name]                         # list tools / one tool's input schema
 bais call <tool> k=v k2:='{"j":1}' -f a.yaml [--raw] [--path a.b[0].c]
 ```
@@ -32,16 +34,48 @@ id rejects the whole edit) and records it in the project's version history:
 ```yaml
 patches:
   - id: "45"
-    props: {text: Souscrire, color: "#2266aa"}
+    props: {text: Souscrire, color: $primary}     # theme color token
 additions:
   - {controlType: input, x: 1273, y: 700, width: 258, height: 32, zOrder: 40}
-deletions: ["12"]
+  - {controlType: sticky-note, after: "45", dy: 20, width: 140, height: 60, text: note}
+  - {use: pill, with: {text: AJOUTÉE, x: 100, y: 200}}   # theme partial
+deletions: ["12"]                                 # subtree deleted recursively
 ```
 
+Before sending, the CLI lints the payload offline (unknown controlType, missing
+geometry, CommonMark markup in text, unresolved color tokens), re-fetches the
+board so manual editor changes are picked up, aborts if a targeted id no longer
+exists, resolves relative `after:` positions, and expands deletions to whole
+subtrees so no orphan children are left behind.
+
+## Theme file
+
+The nearest `.bais.yaml` above the working directory (or `$BAIS_THEME`) defines
+color tokens and parametrized partials, so repeated structures (app chrome,
+steppers, pills, label/value rows) are written once and invoked in one line:
+
+```yaml
+colors:
+  primary: "#009e0f"
+partials:
+  pill:
+    params: {text: PILL, color: $primary, x: 0, y: 0}
+    body:
+      controlType: rectangle
+      backgroundColor: "${color}"
+      x: "${x}"                 # whole-string ${param} keeps the param's type
+      "y": "${y}"
+      width: 90
+      height: 24
+      zOrder: 50
+```
+
+A partial body may be a list of controls; it splices into the surrounding
+array. `bais expand -f payload.yaml` shows the resolved payload without
+sending it.
+
 Board content is cached as plain JSON files in the user cache dir (inspectable
-with `jq`). `bais edit` re-fetches the board just before sending, so manual
-edits made in the editor meanwhile are picked up, and aborts early if a
-targeted control id no longer exists.
+with `jq`).
 
 Credentials are stored in `~/Library/Application Support/bais/credentials.json`
 (0600) and refreshed automatically.

@@ -141,8 +141,20 @@ func mergeFile(params map[string]any, file string) error {
 	if err := yaml.Unmarshal(b, &v); err != nil {
 		return fmt.Errorf("%s: %w", file, err)
 	}
-	for k, val := range v {
-		params[k] = normalizeYAML(val)
+	th, err := loadTheme()
+	if err != nil {
+		return err
+	}
+	expanded, err := th.expand(v)
+	if err != nil {
+		return fmt.Errorf("%s: %w", file, err)
+	}
+	m, ok := expanded.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s: top level must be a mapping", file)
+	}
+	for k, val := range m {
+		params[k] = val
 	}
 	return nil
 }
@@ -170,6 +182,37 @@ func normalizeYAML(v any) any {
 	default:
 		return v
 	}
+}
+
+// cmdExpand prints a payload after theme/partial expansion and lint, without
+// sending anything - the dry-run for building patch and board files.
+func cmdExpand(args []string) error {
+	var file string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-f" && i+1 < len(args) {
+			i++
+			file = args[i]
+		} else {
+			file = args[i]
+		}
+	}
+	if file == "" {
+		return fmt.Errorf("usage: bais expand -f payload.yaml")
+	}
+	params := map[string]any{}
+	if err := mergeFile(params, file); err != nil {
+		return err
+	}
+	var lintErrs []string
+	if _, isEdit := params["additions"]; isEdit || params["patches"] != nil || params["deletions"] != nil {
+		lintErrs = lintEdit(params)
+	} else if params["board"] != nil {
+		lintErrs = lintCreate(params)
+	}
+	for _, e := range lintErrs {
+		warn("%s", e)
+	}
+	return printYAML(params)
 }
 
 func firstSentence(s string) string {
