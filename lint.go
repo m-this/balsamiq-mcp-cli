@@ -93,7 +93,7 @@ func lintControl(at string, ctrl map[string]any) []string {
 	if ct == "" {
 		errs = append(errs, at+": missing controlType")
 	} else if !knownControlTypes[ct] {
-		errs = append(errs, fmt.Sprintf("%s: unknown controlType %q (see: bais tools edit_balsamiq_board)", at, ct))
+		errs = append(errs, fmt.Sprintf("%s: unknown controlType %q (see: bmc tools edit_balsamiq_board)", at, ct))
 	}
 	for _, req := range []string{"x", "y", "width", "height"} {
 		if _, ok := ctrl[req]; !ok {

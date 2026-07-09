@@ -108,7 +108,7 @@ func cmdProjects() error {
 
 func cmdTOC(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: bais toc <projectUrl>")
+		return errors.New("usage: bmc toc <projectUrl>")
 	}
 	result, err := callTool("get_balsamiq_project_toc", map[string]any{"projectUrl": args[0]})
 	if err != nil {
@@ -175,7 +175,7 @@ func cmdBoard(args []string) error {
 		}
 	}
 	if boardURL == "" {
-		return errors.New("usage: bais board <boardUrl> [--refresh] [--full] [--geo] [--depth n] [--find text] [--type button]")
+		return errors.New("usage: bmc board <boardUrl> [--refresh] [--full] [--geo] [--depth n] [--find text] [--type button]")
 	}
 	b, err := loadBoard(boardURL, refresh)
 	if err != nil {
@@ -270,7 +270,7 @@ func printControlLine(ctrl map[string]any, depth int, opts mapOpts) {
 // with children collapsed to their ids.
 func cmdShow(args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: bais show <boardUrl> <controlId>")
+		return errors.New("usage: bmc show <boardUrl> <controlId>")
 	}
 	b, err := loadBoard(args[0], false)
 	if err != nil {
@@ -278,7 +278,7 @@ func cmdShow(args []string) error {
 	}
 	ctrl := findControl(b.Controls, args[1])
 	if ctrl == nil {
-		return fmt.Errorf("control %q not found (run: bais board %s --refresh)", args[1], args[0])
+		return fmt.Errorf("control %q not found (run: bmc board %s --refresh)", args[1], args[0])
 	}
 	out := make(map[string]any, len(ctrl))
 	maps.Copy(out, ctrl)
@@ -334,7 +334,7 @@ func cmdEdit(args []string) error {
 		}
 	}
 	if boardURL == "" || file == "" {
-		return errors.New("usage: bais edit <boardUrl> -f patch.yaml [--preview] (keys: additions, patches, deletions)")
+		return errors.New("usage: bmc edit <boardUrl> -f patch.yaml [--preview] (keys: additions, patches, deletions)")
 	}
 	params := map[string]any{}
 	if err := mergeFile(params, file); err != nil {
@@ -446,7 +446,7 @@ func prepareEdit(boardURL string, params map[string]any) error {
 	}
 
 	if len(missing) > 0 {
-		return fmt.Errorf("board changed since you built this patch: controls %s no longer exist; run 'bais board %s' and rebuild the patch",
+		return fmt.Errorf("board changed since you built this patch: controls %s no longer exist; run 'bmc board %s' and rebuild the patch",
 			strings.Join(missing, ", "), boardURL)
 	}
 	return nil
@@ -494,7 +494,7 @@ func cmdCreate(args []string) error {
 		}
 	}
 	if projectURL == "" || file == "" {
-		return errors.New("usage: bais create <projectUrl> -f board.yaml [--preview] (keys: board, insertAfterBoardUrl)")
+		return errors.New("usage: bmc create <projectUrl> -f board.yaml [--preview] (keys: board, insertAfterBoardUrl)")
 	}
 	params := map[string]any{}
 	if err := mergeFile(params, file); err != nil {
@@ -553,7 +553,7 @@ func cmdPreview(args []string) error {
 		}
 	}
 	if boardURL == "" {
-		return errors.New("usage: bais preview <boardUrl> [--node <controlId>] [-o out.png]")
+		return errors.New("usage: bmc preview <boardUrl> [--node <controlId>] [-o out.png]")
 	}
 	return writePreview(boardURL, node, out)
 }

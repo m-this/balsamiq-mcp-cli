@@ -74,13 +74,13 @@ func cmdLogout() error {
 func accessToken() (string, error) {
 	c, err := loadCreds()
 	if err != nil {
-		return "", errors.New("not logged in, run: bais login")
+		return "", errors.New("not logged in, run: bmc login")
 	}
 	if time.Until(c.ExpiresAt) > time.Minute {
 		return c.AccessToken, nil
 	}
 	if c.RefreshToken == "" {
-		return "", errors.New("token expired, run: bais login")
+		return "", errors.New("token expired, run: bmc login")
 	}
 	tok, err := exchangeToken(url.Values{
 		"grant_type":    {"refresh_token"},
@@ -89,7 +89,7 @@ func accessToken() (string, error) {
 		"resource":      {mcpURL()},
 	})
 	if err != nil {
-		return "", fmt.Errorf("token refresh failed (%w), run: bais login", err)
+		return "", fmt.Errorf("token refresh failed (%w), run: bmc login", err)
 	}
 	tok.ClientID = c.ClientID
 	if tok.RefreshToken == "" {
@@ -207,7 +207,7 @@ func waitForCode(ln net.Listener, state string) (string, error) {
 			ch <- result{err: errors.New("state mismatch")}
 			return
 		}
-		fmt.Fprint(w, "bais: login complete, you can close this tab.")
+		fmt.Fprint(w, "bmc: login complete, you can close this tab.")
 		ch <- result{code: q.Get("code")}
 	})}
 	go srv.Serve(ln)

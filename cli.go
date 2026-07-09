@@ -101,7 +101,7 @@ func cmdCall(args []string) error {
 		}
 	}
 	if toolName == "" {
-		return fmt.Errorf("usage: bais call <tool> [key=value] [key:=json] [-f file] [--raw] [--path p]")
+		return fmt.Errorf("usage: bmc call <tool> [key=value] [key:=json] [-f file] [--raw] [--path p]")
 	}
 
 	c, err := dial()
@@ -197,7 +197,7 @@ func cmdExpand(args []string) error {
 		}
 	}
 	if file == "" {
-		return fmt.Errorf("usage: bais expand -f payload.yaml")
+		return fmt.Errorf("usage: bmc expand -f payload.yaml")
 	}
 	params := map[string]any{}
 	if err := mergeFile(params, file); err != nil {

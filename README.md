@@ -1,4 +1,4 @@
-# bais
+# balsamiq-mcp-cli (bmc)
 
 Token-efficient CLI for Balsamiq wireframes. Talks directly to the Balsamiq MCP
 endpoint (`https://bais.balsamiq.com/mcp`) over streamable HTTP, so no MCP server
@@ -8,24 +8,29 @@ responses come back as pruned YAML instead of raw JSON.
 ## Install
 
 ```sh
-go install github.com/m-this/balsamiq-mcp-cli@latest
+git clone https://github.com/m-this/balsamiq-mcp-cli && cd balsamiq-mcp-cli
+make install
 ```
+
+`make install` builds the `bmc` binary into `go env GOBIN` (falling back to
+`GOPATH/bin`) on any OS. `go install github.com/m-this/balsamiq-mcp-cli@latest`
+also works but names the binary after the module.
 
 ## Usage
 
 ```sh
-bais login                                # OAuth (dynamic client registration + PKCE)
-bais projects                             # projects (name, space, url)
-bais toc <projectUrl>                     # boards of a project, one line each
-bais board <boardUrl>                     # compact control map: id type "text"
+bmc login                                # OAuth (dynamic client registration + PKCE)
+bmc projects                             # projects (name, space, url)
+bmc toc <projectUrl>                     # boards of a project, one line each
+bmc board <boardUrl>                     # compact control map: id type "text"
      [--geo] [--depth n] [--find text] [--type button] [--refresh] [--full]
-bais show <boardUrl> <id>                 # full props of one control, from local cache
-bais edit <boardUrl> -f patch.yaml        # atomic edit: additions / patches / deletions
-bais create <projectUrl> -f board.yaml    # new board from a flexbox node tree
-bais preview <boardUrl> [--node <id>]     # render board (or crop one control) to an image
-bais expand -f payload.yaml               # dry-run: expanded + linted payload, no send
-bais tools [name]                         # list tools / one tool's input schema
-bais call <tool> k=v k2:='{"j":1}' -f a.yaml [--raw] [--path a.b[0].c]
+bmc show <boardUrl> <id>                 # full props of one control, from local cache
+bmc edit <boardUrl> -f patch.yaml        # atomic edit: additions / patches / deletions
+bmc create <projectUrl> -f board.yaml    # new board from a flexbox node tree
+bmc preview <boardUrl> [--node <id>]     # render board (or crop one control) to an image
+bmc expand -f payload.yaml               # dry-run: expanded + linted payload, no send
+bmc tools [name]                         # list tools / one tool's input schema
+bmc call <tool> k=v k2:='{"j":1}' -f a.yaml [--raw] [--path a.b[0].c]
 ```
 
 A patch file sends only what changes; the server applies it atomically (one bad
@@ -71,7 +76,7 @@ partials:
 ```
 
 A partial body may be a list of controls; it splices into the surrounding
-array. `bais expand -f payload.yaml` shows the resolved payload without
+array. `bmc expand -f payload.yaml` shows the resolved payload without
 sending it.
 
 Board content is cached as plain JSON files in the user cache dir (inspectable
@@ -83,7 +88,7 @@ Credentials are stored in `~/Library/Application Support/bais/credentials.json`
 ## Why not MCP directly
 
 The MCP server injects every tool schema into the context (the create/edit
-schemas alone are ~53 KB each) and returns verbose JSON. `bais` keeps the same
+schemas alone are ~53 KB each) and returns verbose JSON. `bmc` keeps the same
 backend but:
 
 - keeps tool schemas out of the agent context entirely
