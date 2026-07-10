@@ -30,9 +30,9 @@ func lintEdit(params map[string]any) []string {
 	var errs []string
 	for key := range params {
 		switch key {
-		case "boardUrl", "additions", "patches", "deletions":
+		case "boardUrl", "additions", "patches", "moves", "deletions":
 		default:
-			errs = append(errs, fmt.Sprintf("unknown top-level key %q (expected additions, patches, deletions)", key))
+			errs = append(errs, fmt.Sprintf("unknown top-level key %q (expected additions, patches, moves, deletions)", key))
 		}
 	}
 	additions, _ := params["additions"].([]any)
@@ -61,10 +61,50 @@ func lintEdit(params map[string]any) []string {
 		}
 		lintStrings(fmt.Sprintf("patches[%d].props", i), props, &errs)
 	}
-	if len(additions)+len(patches) == 0 {
-		if d, _ := params["deletions"].([]any); len(d) == 0 {
-			errs = append(errs, "empty edit: provide at least one of additions, patches, deletions")
+	moves, _ := params["moves"].([]any)
+	for i, mv := range moves {
+		m, ok := mv.(map[string]any)
+		if !ok {
+			errs = append(errs, fmt.Sprintf("moves[%d]: not a mapping", i))
+			continue
 		}
+		if id, _ := m["id"].(string); id == "" {
+			errs = append(errs, fmt.Sprintf("moves[%d]: missing string id", i))
+		}
+		if _, dx := m["dx"]; !dx {
+			if _, dy := m["dy"]; !dy {
+				errs = append(errs, fmt.Sprintf("moves[%d]: needs dx and/or dy", i))
+			}
+		}
+		for key := range m {
+			switch key {
+			case "id", "dx", "dy", "recursive":
+			default:
+				errs = append(errs, fmt.Sprintf("moves[%d]: unknown key %q (expected id, dx, dy, recursive)", i, key))
+			}
+		}
+	}
+	deletions, _ := params["deletions"].([]any)
+	for i, d := range deletions {
+		switch t := d.(type) {
+		case string:
+		case map[string]any:
+			if id, _ := t["id"].(string); id == "" {
+				errs = append(errs, fmt.Sprintf("deletions[%d]: missing string id", i))
+			}
+			for key := range t {
+				switch key {
+				case "id", "subtree":
+				default:
+					errs = append(errs, fmt.Sprintf("deletions[%d]: unknown key %q (expected id, subtree)", i, key))
+				}
+			}
+		default:
+			errs = append(errs, fmt.Sprintf("deletions[%d]: must be an id string or {id, subtree}", i))
+		}
+	}
+	if len(additions)+len(patches)+len(moves)+len(deletions) == 0 {
+		errs = append(errs, "empty edit: provide at least one of additions, patches, moves, deletions")
 	}
 	return errs
 }
@@ -92,12 +132,33 @@ func lintControl(at string, ctrl map[string]any) []string {
 	ct, _ := ctrl["controlType"].(string)
 	if ct == "" {
 		errs = append(errs, at+": missing controlType")
-	} else if !knownControlTypes[ct] {
+	} else if !knownControlTypes[ct] && !frameControlTypes[ct] {
 		errs = append(errs, fmt.Sprintf("%s: unknown controlType %q (see: bmc tools edit_balsamiq_board)", at, ct))
+	}
+	_, from := ctrl["from"]
+	_, to := ctrl["to"]
+	if from || to {
+		if ct != "arrow" {
+			errs = append(errs, fmt.Sprintf("%s: from/to only applies to controlType arrow", at))
+		}
+		if !from || !to {
+			errs = append(errs, fmt.Sprintf("%s: from and to must be given together", at))
+		}
+	}
+	_, after := ctrl["after"]
+	_, parent := ctrl["parent"]
+	if after && parent {
+		errs = append(errs, fmt.Sprintf("%s: after and parent are mutually exclusive", at))
 	}
 	for _, req := range []string{"x", "y", "width", "height"} {
 		if _, ok := ctrl[req]; !ok {
-			if _, relative := ctrl["after"]; relative && (req == "x" || req == "y") {
+			if from && to {
+				continue
+			}
+			if frameControlTypes[ct] && (req == "width" || req == "height") {
+				continue
+			}
+			if (after || parent) && (req == "x" || req == "y") {
 				continue
 			}
 			errs = append(errs, fmt.Sprintf("%s: missing %s", at, req))

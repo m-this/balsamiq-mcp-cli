@@ -13,12 +13,16 @@ Usage:
   bmc toc <projectUrl>                     boards of a project, one line each
   bmc board <boardUrl>                     compact control map (id type "text")
        [--geo] [--depth n] [--find text] [--type button] [--refresh] [--full]
-  bmc show <boardUrl> <controlId>          full props of one control (from local cache)
-  bmc edit <boardUrl> -f patch.yaml        atomic edit: additions / patches / deletions
-       [--preview]                          (lint offline, pre-edit sync, recursive delete)
+  bmc show <boardUrl> <id> [id...]         full props of one or more controls (local cache)
+  bmc edit <boardUrl> -f patch.yaml        atomic edit: additions / patches / moves / deletions
+       [--preview]                          (lint offline, pre-edit sync;
+                                            moves: {id, dx, dy} shifts a whole subtree;
+                                            additions: after/parent relative placement,
+                                            arrow from/to ids, iphone/browser frames;
+                                            deletions: id, or {id, subtree: true})
   bmc create <projectUrl> -f board.yaml    new board from a flexbox node tree [--preview]
   bmc preview <boardUrl> [--node <id>]     render board (or one control) to a PNG
-       [-o out.png]
+       [--scale f] [-o out.png]
   bmc expand -f payload.yaml               dry-run: expanded + linted payload, no send
   bmc tools [name]                         list tools / show one input schema
   bmc call <tool> [k=v] [k:=json] [-f f]   raw tool call (--raw, --path a.b[0].c)

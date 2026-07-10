@@ -7,6 +7,7 @@ import (
 	"image/draw"
 	"image/png"
 
+	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
@@ -75,6 +76,28 @@ func cropToNode(boardURL, id string, imgBytes []byte) ([]byte, error) {
 
 	out := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
 	draw.Draw(out, out.Bounds(), img, rect.Min, draw.Src)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, out); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// scaleImage resamples the image (WebP or PNG) by factor and returns PNG.
+// Upscaling cannot add detail the render lacks, but it keeps small controls
+// legible when the preview is read at reduced resolution.
+func scaleImage(imgBytes []byte, factor float64) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(imgBytes))
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	w, h := int(float64(bounds.Dx())*factor), int(float64(bounds.Dy())*factor)
+	if w < 1 || h < 1 {
+		return nil, fmt.Errorf("scale %g collapses the image to nothing", factor)
+	}
+	out := image.NewRGBA(image.Rect(0, 0, w, h))
+	xdraw.CatmullRom.Scale(out, out.Bounds(), img, bounds, xdraw.Src, nil)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, out); err != nil {
 		return nil, err
